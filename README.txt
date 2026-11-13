@@ -1,3 +1,5 @@
+FOR MY PERSONAL USE
+
 FLASHCARDS - how to use
 1. Unzip this folder.
 2. Double-click index.html (opens in Chrome, Edge, Firefox, Safari). No install or internet needed.
