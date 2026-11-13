@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flashcards</title>
+<style>
+:root{--bg:#f3f5f2;--surface:#fff;--ink:#1c2420;--muted:#66726b;--line:#d5dcd7;--accent:#2f6f5e;--accent-ink:#fff;--back:#e4efe9;--danger:#a33a3a}
+@media (prefers-color-scheme:dark){:root{--bg:#141a17;--surface:#1d2521;--ink:#e8eee9;--muted:#93a199;--line:#2e3a34;--accent:#6fc4a8;--accent-ink:#0f1a15;--back:#24342d;--danger:#e08080}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,"Times New Roman",serif}
+main{max-width:720px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:1.9rem;margin:0 0 4px}
+p.sub{color:var(--muted);margin:0 0 24px;font-family:system-ui,sans-serif;font-size:.95rem}
+button,input,textarea{font:inherit;font-family:system-ui,sans-serif}
+textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);resize:vertical;min-height:70px;margin-bottom:10px}
+button{cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 16px;border-radius:8px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:20px}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}
+li:last-child{border:0}
+li b{display:block}
+li span{color:var(--muted)}
+li button{padding:6px 10px;color:var(--danger);flex-shrink:0}
+.empty{color:var(--muted);font-family:system-ui,sans-serif}
+.hidden{display:none}
+.card{min-height:260px;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px;font-size:1.5rem;background:var(--surface);border:1px solid var(--line);border-radius:14px;cursor:pointer;width:100%;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.card.back{background:var(--back);border-color:var(--accent)}
+.hint{color:var(--muted);font-family:system-ui,sans-serif;font-size:.85rem;margin:10px 0 18px;text-align:center}
+.bar{height:6px;background:var(--line);border-radius:3px;margin:12px 0 18px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .2s}
+.top{display:flex;justify-content:space-between;align-items:center;font-family:system-ui,sans-serif;color:var(--muted)}
+.nav{display:flex;gap:10px;justify-content:center}
+.opts label{display:flex;gap:8px;align-items:center;font-family:system-ui,sans-serif;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+<section id="edit">
+  <h1>Flashcards</h1>
+  <p class="sub">Add your questions and answers, then start reviewing.</p>
+  <div class="panel">
+    <textarea id="q" placeholder="Question"></textarea>
+    <textarea id="a" placeholder="Answer"></textarea>
+    <div class="row"><button class="primary" id="add">Add card</button></div>
+  </div>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <strong id="count">0 cards</strong>
+      <div class="row">
+        <button id="export">Export</button>
+        <button id="import">Import</button>
+        <button id="clear">Delete all</button>
+      </div>
+    </div>
+    <input type="file" id="file" accept=".json,application/json" class="hidden">
+    <p class="empty hidden" id="msg" role="status"></p>
+    <ul id="list"></ul>
+    <p class="empty" id="empty">No cards yet. Add your first one above.</p>
+  </div>
+  <div class="panel opts">
+    <div class="row">
+      <label><input type="radio" name="mode" value="order" checked> Keep in order</label>
+      <label><input type="radio" name="mode" value="shuffle"> Shuffle</label>
+      <button class="primary" id="review" style="margin-left:auto">Review</button>
+    </div>
+  </div>
+</section>
+
+<section id="study" class="hidden">
+  <div class="top"><button id="exit">Back to cards</button><span id="pos"></span></div>
+  <div class="bar"><i id="fill"></i></div>
+  <button class="card" id="card" aria-live="polite"></button>
+  <p class="hint">Click the card or press Space to flip. Arrow keys to move.</p>
+  <div class="nav"><button id="prev">Previous</button><button id="next" class="primary">Next</button></div>
+</section>
+
+<section id="done" class="hidden">
+  <div class="panel" style="text-align:center">
+    <h1>Review complete</h1>
+    <p class="sub">You went through all <span id="total"></span> cards.</p>
+    <div class="row" style="justify-content:center">
+      <button class="primary" id="again">Review again</button>
+      <button id="home">Back to cards</button>
+    </div>
+  </div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let cards=[],deck=[],i=0,flipped=false;
+try{cards=JSON.parse(localStorage.getItem("cards")||"[]")}catch(e){}
+const save=()=>{try{localStorage.setItem("cards",JSON.stringify(cards))}catch(e){}};
+const show=n=>["edit","study","done"].forEach(s=>$(s).classList.toggle("hidden",s!==n));
+
+function render(){
+  $("count").textContent=cards.length+(cards.length===1?" card":" cards");
+  $("empty").classList.toggle("hidden",cards.length>0);
+  $("review").disabled=!cards.length;
+  $("list").innerHTML="";
+  cards.forEach((c,idx)=>{
+    const li=document.createElement("li");
+    const d=document.createElement("div");
+    const b=document.createElement("b");b.textContent=c.q;
+    const s=document.createElement("span");s.textContent=c.a;
+    d.append(b,s);
+    const x=document.createElement("button");x.textContent="Delete";
+    x.onclick=()=>{cards.splice(idx,1);save();render()};
+    li.append(d,x);$("list").append(li);
+  });
+}
+$("add").onclick=()=>{
+  const q=$("q").value.trim(),a=$("a").value.trim();
+  if(!q||!a){(q?$("a"):$("q")).focus();return}
+  cards.push({q,a});save();$("q").value=$("a").value="";$("q").focus();render();
+};
+$("clear").onclick=()=>{if(cards.length&&confirm("Delete all cards?")){cards=[];save();render()}};
+
+const say=t=>{$("msg").textContent=t;$("msg").classList.remove("hidden")};
+$("export").onclick=()=>{
+  if(!cards.length){say("Nothing to export yet. Add some cards first.");return}
+  const url=URL.createObjectURL(new Blob([JSON.stringify(cards,null,2)],{type:"application/json"}));
+  const a=document.createElement("a");a.href=url;a.download="flashcards.json";
+  document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
+  say("Exported "+cards.length+" cards to flashcards.json.");
+};
+$("import").onclick=()=>$("file").click();
+$("file").onchange=async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return;
+  try{
+    const data=JSON.parse(await f.text());
+    if(!Array.isArray(data))throw 0;
+    const have=new Set(cards.map(c=>c.q+"\u0000"+c.a));let n=0;
+    data.forEach(c=>{
+      if(c&&typeof c.q==="string"&&typeof c.a==="string"&&c.q.trim()&&c.a.trim()&&!have.has(c.q+"\u0000"+c.a)){
+        cards.push({q:c.q.trim(),a:c.a.trim()});have.add(c.q+"\u0000"+c.a);n++;
+      }
+    });
+    save();render();say("Imported "+n+" new cards"+(data.length-n>0?" ("+(data.length-n)+" skipped as duplicates or invalid).":"."));
+  }catch(err){say("That file couldn't be read. Choose a flashcards.json file you exported from this site.")}
+};
+
+function start(){
+  deck=cards.slice();
+  if(document.querySelector('input[name=mode]:checked').value==="shuffle"){
+    for(let k=deck.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[deck[k],deck[j]]=[deck[j],deck[k]]}
+  }
+  i=0;show("study");draw();
+}
+function draw(){
+  flipped=false;
+  const c=deck[i];
+  $("card").textContent=c.q;$("card").classList.remove("back");
+  $("pos").textContent=(i+1)+" of "+deck.length;
+  $("fill").style.width=((i+1)/deck.length*100)+"%";
+  $("prev").disabled=i===0;
+  $("next").textContent=i===deck.length-1?"Finish":"Next";
+}
+function flip(){
+  flipped=!flipped;
+  $("card").textContent=flipped?deck[i].a:deck[i].q;
+  $("card").classList.toggle("back",flipped);
+}
+function next(){if(i<deck.length-1){i++;draw()}else{$("total").textContent=deck.length;show("done")}}
+function prev(){if(i>0){i--;draw()}}
+$("review").onclick=start;$("again").onclick=start;
+$("card").onclick=flip;$("next").onclick=next;$("prev").onclick=prev;
+$("exit").onclick=$("home").onclick=()=>show("edit");
+document.addEventListener("keydown",e=>{
+  if($("study").classList.contains("hidden"))return;
+  if(e.key==="ArrowRight")next();
+  else if(e.key==="ArrowLeft")prev();
+  else if(e.key===" "){e.preventDefault();flip()}
+});
+render();
+</script>
+</body>
+</html>
